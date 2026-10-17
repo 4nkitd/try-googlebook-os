@@ -35,6 +35,11 @@ logged-in user.
 Trade-off: a privileged QEMU is a bigger security surface. Pass devices only while you need
 them, on a lab machine.
 
+The guest control link (pointer, clipboard, paste) is loopback-only and token-gated, but
+the viewer hands the token to whoever reaches its local port first, and the token is
+visible in QEMU's command line to local users. Treat it as trusted-local: any account on
+the Mac can, in principle, inject input into the VM.
+
 ## Rules and limits (from the Try Omarchy port's findings)
 
 - One or a few devices, never a hub (passing a hub takes everything behind it).

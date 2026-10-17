@@ -10,6 +10,16 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 - [x] Mouse feel pass 2: mouse-event coalescing off; immediate pointer-speed slider in Settings.
 - [x] USB passthrough plumbing: `run_vm.py --usb`, `run/usb_launch.py` with the admin flow.
 
+## Performance (active focus)
+
+- [x] Baseline and first A/B (see `docs/PERFORMANCE.md`): boot about 40 s guest; idle QEMU
+      22-37% of one core (bursty, guest-side); HVF overhead negligible; GICv3 usable under HVF
+      on UTM's QEMU. vCPU 6 vs 8 shows no clear difference; default stays 6.
+- [ ] Stop the Trusty crash loop (vendor init service) through the image overlay.
+- [ ] Free-page reporting / virtio-balloon experiment for host memory.
+- [ ] 60 fps cap investigation.
+- [ ] Repeatable input-latency probe for interactive tuning.
+
 ## M1: input polish (in progress)
 
 - [ ] Live test of the pointer-speed slider; tune default if needed.
