@@ -1,6 +1,10 @@
-# gbos-vm
+# Try Googlebook OS (gbos-vm fork)
 
 Runs a real Googlebook OS image in a VM on an Apple Silicon Mac — GPU-accelerated, with Chrome working.
+
+![Googlebook OS running](docs/img/googlebook-desktop.png)
+
+> **This is the Try Googlebook OS community fork** of [gbos-vm](https://github.com/skylartaylor/gbos-vm). Same engine, plus mouse-feel fixes (guest acceleration off, no event coalescing, live pointer-speed slider) and USB device passthrough (`run_vm.py --usb`, `run/usb_launch.py`). See [docs/ROADMAP.md](docs/ROADMAP.md). Not affiliated with Google, Dell, or the upstream project; no Google or UTM binaries are redistributed.
 
 It's not an emulator image or a generic Android build. The install script downloads Google's own recovery image for the Dell Googlebook (ARM64, Android 17), swaps the hardware-specific bits for virtual ones, and boots it under QEMU with Vulkan passed through to Metal.
 
