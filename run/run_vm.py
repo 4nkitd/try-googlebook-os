@@ -16,11 +16,11 @@ Bluetooth. Otherwise, or with --no-bluetooth, the guest boots with no Bluetooth 
 USB: --usb passes a host device through (hex vendor:product). macOS only lets a process take
 a device its drivers have claimed when it is root or holds a restricted Apple entitlement,
 so run this script with administrator rights for webcams, drives and similar gear. As root
-the run folder is left reachable (umask 0, world-readable token) so the viewer and this
-folder's tools keep working as the logged-in user.
+the three control sockets are widened for the logged-in user and the token becomes
+world-readable; everything else in the run folder keeps the default 022 umask.
 """
 
-import argparse, atexit, fcntl, json, os, secrets, signal, socket, subprocess, sys
+import argparse, atexit, fcntl, json, os, secrets, signal, socket, subprocess, sys, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -121,14 +121,11 @@ def main():
     a.add_argument("--image", help="image folder (default WORK/image)")
     args = a.parse_args()
     running_as_root = os.geteuid() == 0
-    if running_as_root:
-        os.umask(
-            0
-        )  # started with administrator rights: keep the run folder usable by the non-root viewer
     for spec in args.usb:
         parts = spec.split(":")
         if len(parts) != 2 or not all(
-            part and all(c in "0123456789abcdefABCDEF" for c in part) for part in parts
+            part and len(part) <= 4 and all(c in "0123456789abcdefABCDEF" for c in part)
+            for part in parts
         ):
             sys.exit(
                 f"bad --usb spec {spec!r}; expected hex VENDOR:PRODUCT (for example 04d8:003f)"
@@ -292,6 +289,20 @@ def main():
             start_new_session=True,
         )
         print("PID", proc.pid, "logs", out, flush=True)
+        if running_as_root:
+            # QEMU creates its control sockets under the process umask; the viewer and this
+            # folder's tools run as the logged-in user, so widen just those files.
+            control = [out / n for n in ("spice.sock", "serial.sock", "qmp.sock")]
+            for _ in range(100):
+                for s in control:
+                    if s.exists():
+                        try:
+                            os.chmod(s, 0o777)
+                        except OSError:
+                            pass
+                if all(s.exists() for s in control):
+                    break
+                time.sleep(0.1)
 
         def interrupt(signum, frame):
             raise KeyboardInterrupt

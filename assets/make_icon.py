@@ -7,6 +7,7 @@ Writes assets/icon-1024.png and assets/AppIcon.icns (through iconutil).
 The art: a graphite squircle, the slat wallpaper motif, one glowing bar.
 """
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -102,13 +103,13 @@ def main():
     }
     for name, px in sizes.items():
         out.resize((px, px), Image.LANCZOS).save(iconset / name)
-    subprocess.run(
-        ["iconutil", "-c", "icns", str(iconset), "-o", str(HERE / "AppIcon.icns")],
-        check=True,
-    )
-    for p in iconset.iterdir():
-        p.unlink()
-    iconset.rmdir()
+    try:
+        subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset), "-o", str(HERE / "AppIcon.icns")],
+            check=True,
+        )
+    finally:
+        shutil.rmtree(iconset, ignore_errors=True)
     print("wrote", HERE / "icon-1024.png", "and", HERE / "AppIcon.icns")
 
 

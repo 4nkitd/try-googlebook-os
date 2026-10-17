@@ -33,6 +33,8 @@ for name in ("run_vm.py", "vm_control.py"):
 icon = viewer_m.parent.parent / "assets/AppIcon.icns"
 if icon.is_file():
     shutil.copyfile(icon, app / "Resources/AppIcon.icns")
+else:
+    print("warning: assets/AppIcon.icns missing; the app will show a generic icon")
 (app / "Info.plist").write_bytes(
     plistlib.dumps(
         {

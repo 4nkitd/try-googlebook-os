@@ -4,8 +4,8 @@
   usb_launch.py                 list the USB devices macOS can see
   usb_launch.py VVVV:PPPP ...   start the VM as the administrator with those devices attached,
                                 then open the viewer window on it
-  usb_launch.py --stop          ask the newest VM to shut down
-  usb_launch.py --status        show whether a VM is running
+  usb_launch.py --stop          ask the VM from this folder to shut down
+  usb_launch.py --status        show whether a VM from this folder is running
   usb_launch.py --print ...     print the commands instead of running them
 
 The VM runs with administrator rights because macOS only lets a process take a device its
@@ -22,7 +22,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-WORK = ROOT / "work"
+WORK = Path(os.environ.get("GOOGLEBOOK_WORK", ROOT / "work"))
 sys.path.insert(0, str(HERE))
 import vm_control  # noqa: E402
 
@@ -65,10 +65,11 @@ def newest_run_dir(live_only=True):
 
 
 def vm_alive():
-    return (
-        subprocess.run(["pgrep", "-f", "qemu-interop"], capture_output=True).returncode
-        == 0
-    )
+    launcher = str(WORK / "host/qemu-interop")
+    ps = subprocess.run(
+        ["ps", "-axo", "command="], capture_output=True, text=True
+    ).stdout
+    return any(line.startswith(launcher) for line in ps.splitlines())
 
 
 def default_setting(key, fallback):
@@ -80,6 +81,13 @@ def default_setting(key, fallback):
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else fallback
 
 
+def int_setting(key, fallback):
+    try:
+        return int(default_setting(key, str(fallback)))
+    except ValueError:
+        return fallback
+
+
 def native_display():
     try:
         raw = subprocess.run(
@@ -87,13 +95,22 @@ def native_display():
             capture_output=True,
             text=True,
         ).stdout
-        for d in json.loads(raw).get("SPDisplaysDataType", []):
-            if str(d.get("spdisplays_main", "")).endswith("yes"):
-                w, h = [int(x) for x in d["_spdisplays_pixels"].split(" x ")]
-                return f"{w}x{min(h, round(w / 1.6))}"
+        for gpu in json.loads(raw).get("SPDisplaysDataType", []):
+            for d in gpu.get("spdisplays_ndrvs", []):
+                if str(d.get("spdisplays_main", "")) == "spdisplays_yes":
+                    w, h = [int(x) for x in d["_spdisplays_pixels"].split(" x ")]
+                    return f"{w}x{min(h, round(w / 1.6))}"
     except Exception:
         pass
     return "3024x1890"
+
+
+def valid_spec(spec):
+    parts = spec.split(":")
+    return len(parts) == 2 and all(
+        p and len(p) <= 4 and all(c in "0123456789abcdefABCDEF" for c in p)
+        for p in parts
+    )
 
 
 def main():
@@ -113,9 +130,14 @@ def main():
         action="store_true",
         help="print the commands instead of running them",
     )
-    ap.add_argument("--stop", action="store_true", help="power off the newest VM")
-    ap.add_argument(
-        "--status", action="store_true", help="show whether a VM is running"
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--stop", action="store_true", help="power off the VM from this folder"
+    )
+    mode.add_argument(
+        "--status",
+        action="store_true",
+        help="show whether a VM from this folder is running",
     )
     args = ap.parse_args()
 
@@ -131,15 +153,17 @@ def main():
         if not vm_alive() or not d:
             print("no VM to stop")
             return
-        vm_control.send(d, "VM_POWEROFF")
+        try:
+            vm_control.send(d, "VM_POWEROFF")
+        except OSError as e:
+            sys.exit(f"could not reach the control channel in {d}: {e}")
         print("asked Android to power off, waiting for the VM to exit")
+        for _ in range(40):
             if not vm_alive():
                 print("VM stopped")
                 return
             time.sleep(1)
-        print(
-            "the VM did not stop; quit it from the viewer window if that instance owns it, or check the run log"
-        )
+        print("the VM did not stop within 40 seconds; check its run log")
         return
 
     found = list_devices()
@@ -154,10 +178,7 @@ def main():
         return
 
     for spec in args.devices:
-        parts = spec.split(":")
-        if len(parts) != 2 or not all(
-            p and all(c in "0123456789abcdefABCDEF" for c in p) for p in parts
-        ):
+        if not valid_spec(spec):
             sys.exit(
                 f"bad device spec {spec!r}; expected hex VENDOR:PRODUCT like 05ac:8514 "
                 "(run without arguments to list)"
@@ -166,8 +187,8 @@ def main():
     display = args.display or default_setting("Resolution", "native")
     if "x" not in display:
         display = native_display()
-    memory = args.memory or int(default_setting("MemoryMiB", "4096"))
-    cpus = args.cpus or int(default_setting("CPUs", "6"))
+    memory = args.memory if args.memory is not None else int_setting("MemoryMiB", 4096)
+    cpus = args.cpus if args.cpus is not None else int_setting("CPUs", 6)
     name = time.strftime("usb-%Y%m%d-%H%M%S")
     logs = WORK / "logs"
     logs.mkdir(exist_ok=True)
@@ -176,8 +197,8 @@ def main():
     usb_args = " ".join(f"--usb {shlex.quote(d)}" for d in args.devices)
     script_text = (
         "#!/bin/sh\n"
-        f"cd {shlex.quote(str(ROOT))} && umask 0 && "
-        f"nohup /usr/bin/python3 {shlex.quote(str(RUNNER))} "
+        f"cd {shlex.quote(str(ROOT))} && umask 022 && "
+        f"nohup {shlex.quote(sys.executable)} {shlex.quote(str(RUNNER))} "
         f"{shlex.quote(str(WORK))} {shlex.quote(name)} "
         f"--display {shlex.quote(display)} --memory {memory} --cpus {cpus} "
         f"{usb_args} >> {shlex.quote(str(log))} 2>&1 &\n"
@@ -193,19 +214,25 @@ def main():
         print(["osascript", "-e", applescript])
         return
 
+    if not VIEWER.is_file():
+        sys.exit(f"viewer binary missing at {VIEWER}; run host/build_viewer.py first")
     if vm_alive():
         sys.exit("a VM is already running; stop it first with: usb_launch.py --stop")
 
     script.write_text(script_text)
-    script.chmod(0o755)
+    script.chmod(0o700)
     if subprocess.run(["osascript", "-e", applescript]).returncode != 0:
+        script.unlink(missing_ok=True)
         sys.exit("administrator approval was declined; nothing was started")
 
     print("VM starting with administrator rights, waiting for the display")
+    started = time.monotonic()
     sock = logs / name / "spice.sock"
-    for _ in range(150):
+    while time.monotonic() - started < 150:
         if sock.exists():
             break
+        if time.monotonic() - started > 20 and not vm_alive():
+            sys.exit(f"the VM exited during startup; see {log}")
         time.sleep(1)
     else:
         sys.exit(f"the display never came up; see {log}")
@@ -223,8 +250,13 @@ def main():
     if not token:
         sys.exit(f"could not read the control token; see {log}")
 
-    env = dict(os.environ, VM_INPUT_TOKEN=token)
-    subprocess.Popen([str(VIEWER), str(sock)], env=env)
+    env = dict(
+        os.environ, VM_INPUT_TOKEN=token, VM_MOUSE_SEAMLESS="0", VM_MOUSE_RELATIVE="0"
+    )
+    viewer_args = [str(VIEWER), str(sock)]
+    if default_setting("StartFullscreen", "0") == "1":
+        viewer_args.append("--fullscreen")
+    subprocess.Popen(viewer_args, env=env)
     print(f"viewer opened for {name}")
     print(f"stop it later with: {Path(__file__).name} --stop")
 

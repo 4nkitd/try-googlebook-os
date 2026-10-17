@@ -122,7 +122,7 @@ static unsigned short scan[128] = {
   if(!NSPointInRect([self convertPoint:e.locationInWindow fromView:nil],self.bounds)){if(self.inside){self.inside=NO;[self setHostCursorHidden:NO];self.sendLine(@"X");}return;}
   self.inside=YES;if(self.guestCursor)[self setHostCursorHidden:YES];CGPoint g=[self guestPoint:e];self.sendLine([NSString stringWithFormat:@"M %.1f %.1f",g.x,g.y]);return;}
  if(self.seamless){if(self.inside)[self steer:e];return;}
- if(!self.captured)return;CGFloat scale=MIN(self.bounds.size.width/self.guestSize.width,self.bounds.size.height/self.guestSize.height);if(scale<=0)scale=1;CGFloat speed=[[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"];if(speed<0.25)speed=1.0;[self.input sendMouseMotion:self.buttons relativePoint:CGPointMake(e.deltaX/scale*speed,e.deltaY/scale*speed)];
+ if(!self.captured)return;CGFloat scale=MIN(self.bounds.size.width/self.guestSize.width,self.bounds.size.height/self.guestSize.height);if(scale<=0)scale=1;CGFloat speed=[[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"];speed=MIN(3.0,MAX(0.25,speed));[self.input sendMouseMotion:self.buttons relativePoint:CGPointMake(e.deltaX/scale*speed,e.deltaY/scale*speed)];
 }
 - (void)mouseDragged:(NSEvent *)e {[self mouseMoved:e];}
 - (void)rightMouseDragged:(NSEvent *)e {[self mouseMoved:e];}
@@ -349,7 +349,7 @@ static unsigned short scan[128] = {
   NSGridView *grid=[NSGridView gridViewWithViews:@[
    @[label(@"Pointer:"),self.pointerPopup],
    @[[NSGridCell emptyContentView],hint],
-   @[label(@"Pointer speed:"),speed],
+   @[label(@"Pointer speed (captured):"),speed],
    @[[NSGridCell emptyContentView],note],
    @[[NSGridCell emptyContentView],[NSButton buttonWithTitle:@"Restart VM Now" target:self action:@selector(restartVM:)]],
    @[label(@"Resolution:"),[self popup:@"Resolution" titles:@[@"Match this Mac's display",@"1920 × 1200",@"2560 × 1600",@"3024 × 1890",@"3456 × 2160"] values:@[@"native",@"1920x1200",@"2560x1600",@"3024x1890",@"3456x2160"]]],
