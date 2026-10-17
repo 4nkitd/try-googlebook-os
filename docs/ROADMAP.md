@@ -10,6 +10,9 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 - [x] Mouse feel pass 2: mouse-event coalescing off; immediate pointer-speed slider in Settings.
 - [ ] Validate USB passthrough end to end. CLI plumbing exists; privileged launch and physical devices are unverified.
 
+The public `v0.1.0-alpha.1` blocks physical USB/Bluetooth capture and root QEMU execution.
+Research source is included, but these are not supported release features.
+
 ## Performance (active focus)
 
 - [x] Baseline and first A/B (see `docs/PERFORMANCE.md`): boot about 40 s guest; sampled QEMU
@@ -79,8 +82,13 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 
 ## M8: productization
 
+- [x] Publish [public source and an ARM64 setup-launcher DMG](https://github.com/4nkitd/try-googlebook-os/releases/tag/v0.1.0-alpha.1),
+      source archive and checksums. No Google OS image or UTM binaries are redistributed.
+- [x] Publish the `4nkitd/tap/try-googlebook-os` Homebrew cask.
+- [x] Replace the ribbed app icon with the open-book/launch-arrow design and retain vector source.
 - [ ] Launcher UI: skip option, resources, networking, USB, reset, logs.
-- [ ] Signing/notarization decision for distribution beyond this Mac (needs Apple Developer account).
+- [x] Alpha signing decision: ad-hoc signed with an explicit Gatekeeper warning.
+- [ ] Developer ID signing and notarization for wider distribution.
 - [ ] Onboarding docs and screenshots.
 
 ## Not planned

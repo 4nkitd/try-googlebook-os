@@ -34,7 +34,8 @@ Notes:
 ## Open items, ranked
 
 1. Trusty crash loop: disable the respawning init service in the vendor overlay (image
-   change, ships through `update-image.sh`). Removes steady CPU churn and serial-log growth.
+   change, ships through `update-image.sh`). Stop the observed respawn/log churn and measure
+   the CPU effect rather than assuming a performance gain.
 2. Memory return to macOS: try virtio-balloon with free-page reporting (verify the guest
    kernel has the driver) so the host gets unused guest RAM back.
 3. 60 fps cap: investigate whether a virtio-gpu refresh setting or a guest SurfaceFlinger
