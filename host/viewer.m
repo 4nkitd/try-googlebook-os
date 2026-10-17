@@ -122,7 +122,7 @@ static unsigned short scan[128] = {
   if(!NSPointInRect([self convertPoint:e.locationInWindow fromView:nil],self.bounds)){if(self.inside){self.inside=NO;[self setHostCursorHidden:NO];self.sendLine(@"X");}return;}
   self.inside=YES;if(self.guestCursor)[self setHostCursorHidden:YES];CGPoint g=[self guestPoint:e];self.sendLine([NSString stringWithFormat:@"M %.1f %.1f",g.x,g.y]);return;}
  if(self.seamless){if(self.inside)[self steer:e];return;}
- if(!self.captured)return;CGFloat scale=MIN(self.bounds.size.width/self.guestSize.width,self.bounds.size.height/self.guestSize.height);if(scale<=0)scale=1;[self.input sendMouseMotion:self.buttons relativePoint:CGPointMake(e.deltaX/scale,e.deltaY/scale)];
+ if(!self.captured)return;CGFloat scale=MIN(self.bounds.size.width/self.guestSize.width,self.bounds.size.height/self.guestSize.height);if(scale<=0)scale=1;CGFloat speed=[[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"];if(speed<0.25)speed=1.0;[self.input sendMouseMotion:self.buttons relativePoint:CGPointMake(e.deltaX/scale*speed,e.deltaY/scale*speed)];
 }
 - (void)mouseDragged:(NSEvent *)e {[self mouseMoved:e];}
 - (void)rightMouseDragged:(NSEvent *)e {[self mouseMoved:e];}
@@ -165,7 +165,8 @@ static unsigned short scan[128] = {
 @end
 @implementation App
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
- [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"PointerMode":@2,@"Resolution":@"native",@"StartFullscreen":@NO,@"MemoryMiB":@4096,@"CPUs":@6,@"Networking":@YES,@"Audio":@YES,@"Bluetooth":@YES}];
+ [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"PointerMode":@2,@"Resolution":@"native",@"StartFullscreen":@NO,@"MemoryMiB":@4096,@"CPUs":@6,@"PointerSpeed":@1.0,@"Networking":@YES,@"Audio":@YES,@"Bluetooth":@YES}];
+ [NSEvent setMouseCoalescingEnabled:NO]; // forward every mouse-moved event; coalescing steps the captured pointer
  self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1280,800) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
  self.window.title=@"Googlebook VM";self.window.subtitle=@"Connecting…";self.window.delegate=self;self.window.acceptsMouseMovedEvents=YES;self.window.collectionBehavior=NSWindowCollectionBehaviorFullScreenPrimary;
  self.view=[[VMView alloc] initWithFrame:self.window.contentView.bounds device:MTLCreateSystemDefaultDevice()];self.view.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;self.view.preferredFramesPerSecond=120;self.view.clearColor=MTLClearColorMake(0,0,0,1);
@@ -335,16 +336,20 @@ static unsigned short scan[128] = {
  if([sender.identifier isEqualToString:@"PointerMode"]){[self applyPointerMode];[self sendGeometry];}
 }
 - (void)checkChanged:(NSButton *)sender {[[NSUserDefaults standardUserDefaults] setBool:sender.state==NSControlStateValueOn forKey:sender.identifier];}
+- (void)speedChanged:(NSSlider *)sender {[[NSUserDefaults standardUserDefaults] setDouble:sender.doubleValue forKey:@"PointerSpeed"];}
 - (void)syncSettingsWindow {[self.pointerPopup selectItemAtIndex:([self pointerMode]+1)%3];}
 - (void)showSettings:(id)sender {
  if(!self.settingsWindow){
   NSTextField *(^label)(NSString *)=^NSTextField *(NSString *t){NSTextField *l=[NSTextField labelWithString:t];l.alignment=NSTextAlignmentRight;return l;};
   self.pointerPopup=[self popup:@"PointerMode" titles:@[@"Captured mouse",@"Android cursor (experimental)",@"Mac cursor (experimental)"] values:@[@2,@0,@1]];
   NSTextField *hint=[NSTextField labelWithString:@"Captured mouse: click to grab, ⌃⌥ to release. ⌃⌘M cycles modes."];hint.textColor=NSColor.secondaryLabelColor;hint.font=[NSFont systemFontOfSize:NSFont.smallSystemFontSize];
-  NSTextField *note=[NSTextField wrappingLabelWithString:@"Everything below applies the next time you start the VM."];note.textColor=NSColor.secondaryLabelColor;note.font=[NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+  NSTextField *note=[NSTextField wrappingLabelWithString:@"Pointer speed applies immediately; the items below it apply the next time the VM starts."];note.textColor=NSColor.secondaryLabelColor;note.font=[NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+  NSSlider *speed=[NSSlider sliderWithValue:[[NSUserDefaults standardUserDefaults] doubleForKey:@"PointerSpeed"] minValue:0.25 maxValue:3.0 target:self action:@selector(speedChanged:)];
+  speed.continuous=YES;speed.controlSize=NSControlSizeSmall;
   NSGridView *grid=[NSGridView gridViewWithViews:@[
    @[label(@"Pointer:"),self.pointerPopup],
    @[[NSGridCell emptyContentView],hint],
+   @[label(@"Pointer speed:"),speed],
    @[[NSGridCell emptyContentView],note],
    @[[NSGridCell emptyContentView],[NSButton buttonWithTitle:@"Restart VM Now" target:self action:@selector(restartVM:)]],
    @[label(@"Resolution:"),[self popup:@"Resolution" titles:@[@"Match this Mac's display",@"1920 × 1200",@"2560 × 1600",@"3024 × 1890",@"3456 × 2160"] values:@[@"native",@"1920x1200",@"2560x1600",@"3024x1890",@"3456x2160"]]],
@@ -356,7 +361,7 @@ static unsigned short scan[128] = {
    @[[NSGridCell emptyContentView],[self checkbox:@"Bluetooth" title:@"Bluetooth (virtual radio; needs the Android emulator installed)"]]]];
   grid.rowSpacing=8;grid.columnSpacing=10;grid.translatesAutoresizingMaskIntoConstraints=NO;
   [grid columnAtIndex:0].xPlacement=NSGridCellPlacementTrailing;
-  NSWindow *w=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,520,370) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
+  NSWindow *w=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,520,398) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
   w.title=@"Googlebook Settings";w.releasedWhenClosed=NO;[w.contentView addSubview:grid];
   [NSLayoutConstraint activateConstraints:@[[grid.topAnchor constraintEqualToAnchor:w.contentView.topAnchor constant:20],[grid.leadingAnchor constraintEqualToAnchor:w.contentView.leadingAnchor constant:20],[grid.trailingAnchor constraintLessThanOrEqualToAnchor:w.contentView.trailingAnchor constant:-20],[grid.bottomAnchor constraintLessThanOrEqualToAnchor:w.contentView.bottomAnchor constant:-20]]];
   [w center];self.settingsWindow=w;
