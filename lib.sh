@@ -1,5 +1,6 @@
 # Shared settings for the Googlebook-on-Apple-Silicon build scripts. Source, don't run.
 set -Eeuo pipefail
+py() { uv run --no-project --python 3.12 python "$@"; }
 # Never stop without saying where: any command that ends the script prints its location.
 trap 'rc=$?; [ "$BASH_SUBSHELL" -gt 0 ] || printf "error: %s stopped at line %s (exit %s)\n" "${BASH_SOURCE[0]##*/}" "$LINENO" "$rc" >&2' ERR
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"

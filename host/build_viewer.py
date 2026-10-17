@@ -28,13 +28,16 @@ shader = (
     )
 )
 (app / "Resources/VMShaders.metal").write_text(shader)
-for name in ("run_vm.py", "vm_control.py"):
+for name in ("run_vm.py", "vm_control.py", "bt_bridge.py"):
     shutil.copyfile(run_scripts / name, app / "Resources" / name)
 icon = viewer_m.parent.parent / "assets/AppIcon.icns"
 if icon.is_file():
     shutil.copyfile(icon, app / "Resources/AppIcon.icns")
 else:
-    print("warning: assets/AppIcon.icns missing; the app will show a generic icon")
+    print(
+        "warning: assets/AppIcon.icns missing; the app will show a generic icon",
+        file=sys.stderr,
+    )
 (app / "Info.plist").write_bytes(
     plistlib.dumps(
         {

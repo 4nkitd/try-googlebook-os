@@ -15,7 +15,7 @@ GBOS_IMAGE_DIR="$NEW" "$ROOT/build-image.sh"
 say "Updating $IMAGE_DIR (previous disk kept as googlebook.raw.before-update)"
 rm -f "$IMAGE_DIR/googlebook.raw.before-update"
 cp -c "$IMAGE_DIR/googlebook.raw" "$IMAGE_DIR/googlebook.raw.before-update"
-python3 "$ROOT/image/sync_super.py" "$IMAGE_DIR/googlebook.raw" "$NEW/googlebook.raw" \
+py "$ROOT/image/sync_super.py" "$IMAGE_DIR/googlebook.raw" "$NEW/googlebook.raw" \
   || { mv -f "$IMAGE_DIR/googlebook.raw.before-update" "$IMAGE_DIR/googlebook.raw"; die "update failed; your disk is unchanged"; }
 mv -f "$NEW/initrd.img" "$NEW/kernel.Image" "$IMAGE_DIR/"
 cp "$NEW"/*.json "$IMAGE_DIR/" 2>/dev/null || true

@@ -20,17 +20,16 @@ Notes:
   25% to 37% for the same configuration. Treat 6 versus 8 vCPUs as "no clear difference at
   idle, boot unchanged". The default stays at 6 (lower power ceiling); 8 vCPUs and more
   memory remain available in Settings for heavy sessions.
-- A `sample` profile of QEMU at idle is dominated by waits (`__psynch_cvwait`, `poll`,
-  `pselect`); hypervisor traps (`hv_trap`) are a tiny fraction and no QEMU-side hot frame
-  appears. The idle burn is guest-side Android activity, not emulation overhead.
+- A `sample` profile contains many waiting-thread stacks. This does not establish how much
+  CPU is spent in the host VMM versus the guest. CPU-weighted profiling and controlled
+  before/after tests are still needed before assigning the overhead to either side.
 - Interrupts: the guest uses the GICv3 device plus ITS under HVF on UTM's QEMU 10.0.12.
   Plain upstream QEMU 10 releases lack `hw/intc/arm_gicv3_hvf.c` (the Try Omarchy port moved
   to QEMU 11.1.1 for in-hypervisor GICv3); UTM's fork handles GICv3 with HVF on this stack.
 - Display stays capped at 60 fps (QEMU does not expose a refresh setting); unchanged from
   upstream.
-- Guest noise: `trusty_security_vm_launcher` aborts once per second for the life of the
-  boot (leftover service for the absent security VM). Small steady CPU cost, large log
-  churn.
+- Guest noise: `trusty_security_vm_launcher` aborts repeatedly for absent hardware. The log
+  churn is observed; its CPU cost has not been isolated or measured.
 
 ## Open items, ranked
 

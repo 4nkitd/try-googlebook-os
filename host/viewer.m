@@ -89,14 +89,14 @@ static unsigned short scan[128] = {
 - (void)mouseExited:(NSEvent *)e {if(self.absolute){self.inside=NO;[self setHostCursorHidden:NO];self.sendLine(@"X");return;}if(!self.seamless)return;self.inside=NO;[self setHostCursorHidden:NO];}
 - (void)capture {
  if(self.seamless||!self.relativeAllowed)return;
- if(!self.captured && self.input){self.captured=YES;[self.window makeFirstResponder:self];[self.input requestMouseMode:YES];CGAssociateMouseAndMouseCursorPosition(false);[NSCursor hide];self.window.subtitle=@"Mouse captured • ⌃⌥ releases";}
+ if(!self.captured && self.input){self.captured=YES;[self.window makeFirstResponder:self];[self.input requestMouseMode:YES];CGAssociateMouseAndMouseCursorPosition(false);[NSCursor hide];self.window.accessibilityHelp=@"Mouse captured. Control-Option releases it.";}
 }
 - (void)releaseCapture {
  [self.input releaseKeys];
  for(NSNumber *b in @[@(kCSInputButtonLeft),@(kCSInputButtonRight),@(kCSInputButtonMiddle)]) [self.input sendMouseButton:b.unsignedIntegerValue mask:0 pressed:NO];
  self.buttons=0;
  if(self.seamless){self.inside=NO;[self setHostCursorHidden:NO];return;}
- if(self.captured){self.captured=NO;CGAssociateMouseAndMouseCursorPosition(true);[NSCursor unhide];self.window.subtitle=@"Click to capture • ⌃⌥ releases";}
+ if(self.captured){self.captured=NO;CGAssociateMouseAndMouseCursorPosition(true);[NSCursor unhide];self.window.accessibilityHelp=@"Click to capture. Control-Option releases the mouse.";}
 }
 - (BOOL)live {return self.absolute||(self.seamless?(self.input!=nil):self.captured);}
 - (void)button:(CSInputButton)b down:(BOOL)down event:(NSEvent *)e {
@@ -154,6 +154,8 @@ static unsigned short scan[128] = {
 @property(nonatomic) BOOL densitySent;
 @property(nonatomic) NSInteger guestDensity;
 @property(nonatomic,strong) NSPopUpButton *pointerPopup;
+@property(nonatomic,strong) NSPopUpButton *headerPointer;
+@property(nonatomic,strong) NSButton *headerRestart;
 - (void)syncSettingsWindow;
 @property(nonatomic,strong) dispatch_source_t selftest;
 @property(nonatomic,strong) dispatch_source_t selftest2;
@@ -164,17 +166,72 @@ static unsigned short scan[128] = {
 @property(nonatomic) NSInteger sentClipCount;
 @end
 @implementation App
+- (NSButton *)headerButton:(NSString *)name symbol:(NSString *)symbol action:(SEL)action {
+ NSImage *image=[[NSImage imageWithSystemSymbolName:symbol accessibilityDescription:name]
+  imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:13 weight:NSFontWeightRegular]];
+ NSButton *button=[NSButton buttonWithImage:image target:self action:action];
+ button.identifier=name;
+ button.bordered=NO;
+ button.controlSize=NSControlSizeSmall;
+ button.imageScaling=NSImageScaleNone;
+ button.toolTip=name;
+ button.accessibilityLabel=name;
+ [button.widthAnchor constraintEqualToConstant:24].active=YES;
+ [button.heightAnchor constraintEqualToConstant:24].active=YES;
+ return button;
+}
+- (void)configureHeader {
+ self.window.title=@"Googlebook";
+ self.window.subtitle=@"";
+ self.window.toolbar=nil;
+ while(self.window.titlebarAccessoryViewControllers.count)[self.window removeTitlebarAccessoryViewControllerAtIndex:0];
+ self.headerPointer=[[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:YES];
+ self.headerPointer.bordered=NO;
+ self.headerPointer.controlSize=NSControlSizeSmall;
+ self.headerPointer.imagePosition=NSImageOnly;
+ self.headerPointer.toolTip=@"Pointer mode (Control-Command-M). Control-Option releases the mouse.";
+ self.headerPointer.accessibilityLabel=@"Pointer mode";
+ [self.headerPointer addItemWithTitle:@""];
+ self.headerPointer.lastItem.image=[[NSImage imageWithSystemSymbolName:@"cursorarrow" accessibilityDescription:@"Pointer mode"]
+  imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:13 weight:NSFontWeightRegular]];
+ NSArray *names=@[@"Android Cursor (Experimental)",@"Mac Cursor (Experimental)",@"Captured Mouse"];
+ for(NSNumber *mode in @[@2,@0,@1]) {
+  [self.headerPointer addItemWithTitle:names[mode.integerValue]];
+  NSMenuItem *item=self.headerPointer.lastItem;
+  item.tag=mode.integerValue;item.target=self;item.action=@selector(choosePointerMode:);
+ }
+ [self.headerPointer.widthAnchor constraintEqualToConstant:32].active=YES;
+ [self.headerPointer.heightAnchor constraintEqualToConstant:24].active=YES;
+ NSButton *fullscreen=[self headerButton:@"Full screen" symbol:@"arrow.up.left.and.arrow.down.right" action:@selector(toggleFull:)];
+ fullscreen.toolTip=@"Full screen (Control-Command-F)";
+ NSButton *settings=[self headerButton:@"Settings" symbol:@"gearshape" action:@selector(showSettings:)];
+ settings.toolTip=@"Settings (Command-comma)";
+ self.headerRestart=[self headerButton:@"Restart VM" symbol:@"arrow.clockwise" action:@selector(restartVM:)];
+ self.headerRestart.toolTip=@"Restart VM (Control-Command-R)";
+ self.headerRestart.enabled=self.vmTask!=nil;
+ NSStackView *actions=[NSStackView stackViewWithViews:@[self.headerPointer,fullscreen,settings,self.headerRestart]];
+ actions.orientation=NSUserInterfaceLayoutOrientationHorizontal;
+ actions.spacing=2;
+ actions.alignment=NSLayoutAttributeCenterY;
+ actions.edgeInsets=NSEdgeInsetsMake(0,0,0,8);
+ actions.frame=NSMakeRect(0,0,118,24);
+ NSTitlebarAccessoryViewController *accessory=[NSTitlebarAccessoryViewController new];
+ accessory.view=actions;
+ accessory.layoutAttribute=NSLayoutAttributeRight;
+ [self.window addTitlebarAccessoryViewController:accessory];
+}
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
  [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"PointerMode":@2,@"Resolution":@"native",@"StartFullscreen":@NO,@"MemoryMiB":@4096,@"CPUs":@6,@"PointerSpeed":@1.0,@"Networking":@YES,@"Audio":@YES,@"Bluetooth":@YES}];
  [NSEvent setMouseCoalescingEnabled:NO]; // forward every mouse-moved event; coalescing steps the captured pointer
  self.window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1280,800) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable backing:NSBackingStoreBuffered defer:NO];
- self.window.title=@"Googlebook VM";self.window.subtitle=@"Connecting…";self.window.delegate=self;self.window.acceptsMouseMovedEvents=YES;self.window.collectionBehavior=NSWindowCollectionBehaviorFullScreenPrimary;
+ self.window.delegate=self;self.window.acceptsMouseMovedEvents=YES;self.window.collectionBehavior=NSWindowCollectionBehaviorFullScreenPrimary;
+ [self configureHeader];
  self.view=[[VMView alloc] initWithFrame:self.window.contentView.bounds device:MTLCreateSystemDefaultDevice()];self.view.autoresizingMask=NSViewWidthSizable|NSViewHeightSizable;self.view.preferredFramesPerSecond=120;self.view.clearColor=MTLClearColorMake(0,0,0,1);
  // Started from the Dock or Finder (no socket argument): this app runs the VM itself.
  if(!self.socketPath){setenv("VM_MOUSE_SEAMLESS","0",1);setenv("VM_MOUSE_RELATIVE","0",1);self.startFullscreen=[[NSUserDefaults standardUserDefaults] boolForKey:@"StartFullscreen"];}
  const char *sm=getenv("VM_MOUSE_SEAMLESS"),*gn=getenv("VM_MOUSE_GAIN");self.view.seamless=!(sm&&!strcmp(sm,"0"));
  const char *rl=getenv("VM_MOUSE_RELATIVE");self.view.relativeAllowed=!(rl&&!strcmp(rl,"0"))||[self pointerMode]==2;
- if(!self.view.relativeAllowed)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(150*NSEC_PER_SEC)),dispatch_get_main_queue(),^{if(!self.view.absolute){self.view.relativeAllowed=YES;[self updateSubtitle];}});self.view.gain=(gn&&atof(gn)>0)?atof(gn):0.75;
+ if(!self.view.relativeAllowed)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(150*NSEC_PER_SEC)),dispatch_get_main_queue(),^{if(!self.view.absolute){self.view.relativeAllowed=YES;[self updatePointerHint];}});self.view.gain=(gn&&atof(gn)>0)?atof(gn):0.75;
  self.renderer=[[CSMetalRenderer alloc] initWithMetalKitView:self.view];self.view.delegate=self.renderer;
  self.window.contentView=self.view;[self.window center];[self.window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];
  if(self.startFullscreen)[self.window toggleFullScreen:nil];
@@ -198,7 +255,7 @@ static unsigned short scan[128] = {
  fprintf(stderr,"WINDOW %ld\n",(long)self.window.windowNumber);
  fprintf(stderr,"NATIVE_VIEWER device=%s target_hz=60 socket=%s\n",self.view.device.name.UTF8String,self.socketPath.UTF8String);
 }
-- (void)fit {CGSize size=self.display.displaySize;if(size.width && size.height){if(!CGSizeEqualToSize(size,self.view.guestSize)){self.view.guestSize=size;[self sendGeometry];}self.view.guestSize=size;self.renderer.viewportScale=MIN(self.view.drawableSize.width/size.width,self.view.drawableSize.height/size.height);self.renderer.viewportOrigin=CGPointZero;self.window.title=[NSString stringWithFormat:@"Googlebook • %.0f×%.0f • %@",size.width,size.height,self.display.isGLEnabled?@"Metal / IOSurface":@"SPICE"];}}
+- (void)fit {CGSize size=self.display.displaySize;if(size.width && size.height){if(!CGSizeEqualToSize(size,self.view.guestSize)){self.view.guestSize=size;[self sendGeometry];}self.view.guestSize=size;self.renderer.viewportScale=MIN(self.view.drawableSize.width/size.width,self.view.drawableSize.height/size.height);self.renderer.viewportOrigin=CGPointZero;}}
 - (void)windowDidResize:(NSNotification *)n{[self fit];}
 - (void)resyncPointer:(id)sender{[self.view resync];}
 - (void)toggleFull:(id)sender{[self.window toggleFullScreen:nil];}
@@ -243,7 +300,7 @@ static unsigned short scan[128] = {
  t.standardOutput=[NSFileHandle fileHandleWithNullDevice];t.standardError=[NSFileHandle fileHandleWithNullDevice];
  __weak App *weak=self;
  t.terminationHandler=^(NSTask *x){dispatch_async(dispatch_get_main_queue(),^{
-  App *me=weak;if(!me||me.vmTask!=x)return;me.vmTask=nil;
+  App *me=weak;if(!me||me.vmTask!=x)return;me.vmTask=nil;me.headerRestart.enabled=NO;
   if(me.quitting){
    // Restart: once Android is down and the runner has exited, open a fresh copy of the app.
    // A new instance also picks up any Settings that only apply at start.
@@ -254,7 +311,7 @@ static unsigned short scan[128] = {
   else [me fail:@"The VM exited before its display came up. Another Googlebook VM may already be running; otherwise check the newest folder under logs/."];
  });};
  NSError *err=nil;if(![t launchAndReturnError:&err]){[self fail:err.localizedDescription];return;}
- self.vmTask=t;self.window.subtitle=@"Starting the VM…";
+ self.vmTask=t;self.headerRestart.enabled=YES;self.window.title=@"Googlebook: Starting…";
  [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer){
   if(!self.vmTask){[timer invalidate];return;}
   NSFileManager *fm=[NSFileManager defaultManager];
@@ -279,7 +336,7 @@ static unsigned short scan[128] = {
 - (void)restartVM:(id)sender {if(self.vmTask){self.restarting=YES;[NSApp terminate:nil];}}
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
  if(!self.vmTask||!self.vmTask.running)return NSTerminateNow;
- self.quitting=YES;self.window.subtitle=self.restarting?@"Restarting: shutting Android down…":@"Shutting Android down…";[self.view releaseCapture];[self.vmTask terminate];
+ self.quitting=YES;self.window.title=self.restarting?@"Googlebook: Restarting…":@"Googlebook: Shutting down…";[self.view releaseCapture];[self.vmTask terminate];
  return NSTerminateLater;
 }
 // Control link to the helper inside Android (scripts/guest_input): it connects
@@ -292,13 +349,16 @@ static unsigned short scan[128] = {
 - (void)ctlClose {
  if(self.readSource){dispatch_source_cancel(self.readSource);self.readSource=nil;}
  if(self.ctlFd>=0){close(self.ctlFd);self.ctlFd=-1;}
- self.view.absolute=NO;self.view.guestCursor=NO;[self.view setHostCursorHidden:NO];fprintf(stderr,"CONTROL disconnected\n");[self updateSubtitle];
+ self.view.absolute=NO;self.view.guestCursor=NO;[self.view setHostCursorHidden:NO];fprintf(stderr,"CONTROL disconnected\n");[self updatePointerHint];
 }
-- (void)updateSubtitle {
+- (void)updatePointerHint {
  NSInteger mode=[self pointerMode];
- if(mode==2&&self.view.relativeAllowed)self.window.subtitle=@"Captured mouse: click to capture, ⌃⌥ releases • ⌃⌘M switches pointer mode";
- else if(self.view.absolute)self.window.subtitle=self.view.guestCursor?@"Android cursor • ⌃⌘M switches pointer mode • ⌃⌘F full screen":@"Mac cursor • ⌃⌘M switches pointer mode • ⌃⌘F full screen";
- else self.window.subtitle=self.view.relativeAllowed?@"Click to capture • ⌃⌥ releases":@"Waiting for Android to link the pointer…";
+ NSString *hint;
+ if(mode==2&&self.view.relativeAllowed)hint=@"Captured mouse. Click to capture; Control-Option releases. Control-Command-M changes mode.";
+ else if(self.view.absolute)hint=self.view.guestCursor?@"Android cursor. Control-Command-M changes mode.":@"Mac cursor. Control-Command-M changes mode.";
+ else hint=self.view.relativeAllowed?@"Click to capture. Control-Option releases.":@"Waiting for Android's pointer connection.";
+ self.window.accessibilityHelp=hint;
+ self.headerPointer.toolTip=hint;
 }
 // Pointer modes, cycled with Ctrl+Cmd+M and remembered:
 //   (2, the captured mouse, is the default; 0 and 1 are labelled experimental in the UI.)
@@ -313,7 +373,7 @@ static unsigned short scan[128] = {
  [self.view releaseCapture];
  self.view.absolute=self.ctlFd>=0&&mode!=2;
  if(mode==2){self.view.relativeAllowed=YES;self.view.guestCursor=NO;[self.view setHostCursorHidden:NO];}
- [self updateSubtitle];
+ [self updatePointerHint];
 }
 - (void)toggleCursor:(id)sender{NSUserDefaults *d=[NSUserDefaults standardUserDefaults];[d setInteger:([self pointerMode]+1)%3 forKey:@"PointerMode"];[self applyPointerMode];[self sendGeometry];[self syncSettingsWindow];}
 - (void)choosePointerMode:(NSMenuItem *)sender{[[NSUserDefaults standardUserDefaults] setInteger:sender.tag forKey:@"PointerMode"];[self applyPointerMode];[self sendGeometry];[self syncSettingsWindow];}
@@ -375,7 +435,7 @@ static unsigned short scan[128] = {
  [self ctlSend:[@"C " stringByAppendingString:[[t dataUsingEncoding:NSUTF8StringEncoding] base64EncodedStringWithOptions:0]]];
 }
 - (void)ctlLine:(NSString *)line {
- if([line hasPrefix:@"m "]){self.view.guestCursor=[line isEqualToString:@"m tablet"]&&[self pointerMode]==0;if(!self.view.guestCursor||!self.view.inside)[self.view setHostCursorHidden:NO];else [self.view setHostCursorHidden:YES];fprintf(stderr,"CONTROL pointer mode %s\n",line.UTF8String+2);[self updateSubtitle];return;}
+ if([line hasPrefix:@"m "]){self.view.guestCursor=[line isEqualToString:@"m tablet"]&&[self pointerMode]==0;if(!self.view.guestCursor||!self.view.inside)[self.view setHostCursorHidden:NO];else [self.view setHostCursorHidden:YES];fprintf(stderr,"CONTROL pointer mode %s\n",line.UTF8String+2);[self updatePointerHint];return;}
  if([line hasPrefix:@"c "]){
   NSData *d=[[NSData alloc] initWithBase64EncodedString:[line substringFromIndex:2] options:0];NSString *t=d?[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding]:nil;
   if(t.length){NSPasteboard *pb=[NSPasteboard generalPasteboard];[pb clearContents];[pb setString:t forType:NSPasteboardTypeString];self.sentClipCount=pb.changeCount;}
@@ -393,7 +453,7 @@ static unsigned short scan[128] = {
   if(self.ctlFd>=0)[self ctlClose];
   int yes=1;setsockopt(fd,IPPROTO_TCP,TCP_NODELAY,&yes,sizeof yes);
   self.ctlFd=fd;self.ctlBuffer=[NSMutableData data];[self applyPointerMode];self.sentClipCount=-1;
-  fprintf(stderr,"CONTROL connected\n");[self updateSubtitle];
+  fprintf(stderr,"CONTROL connected\n");[self updatePointerHint];
   const char *tk=getenv("VM_INPUT_TOKEN");if(tk&&*tk)[self ctlSend:[NSString stringWithFormat:@"A %s",tk]];
   [self sendGeometry];[self pushClipboard];
   dispatch_source_t rs=dispatch_source_create(DISPATCH_SOURCE_TYPE_READ,fd,0,dispatch_get_main_queue());self.readSource=rs;
@@ -420,11 +480,11 @@ static unsigned short scan[128] = {
 - (void)windowWillClose:(NSNotification *)n{if(n.object==self.window)[NSApp terminate:nil];}
 - (void)applicationWillTerminate:(NSNotification *)n{[self.view releaseCapture];[self.connection disconnect];}
 - (void)spiceConnected:(CSConnection *)c{fprintf(stderr,"SPICE connected\n");}
-- (void)spiceDisconnected:(CSConnection *)c{dispatch_async(dispatch_get_main_queue(),^{[self.view releaseCapture];self.window.subtitle=@"VM disconnected";});}
+- (void)spiceDisconnected:(CSConnection *)c{dispatch_async(dispatch_get_main_queue(),^{[self.view releaseCapture];self.window.title=@"Googlebook: Disconnected";});}
 - (void)spiceInputAvailable:(CSConnection *)c input:(CSInput *)i{dispatch_async(dispatch_get_main_queue(),^{self.view.input=i;[i requestMouseMode:YES];});}
 - (void)spiceInputUnavailable:(CSConnection *)c input:(CSInput *)i{dispatch_async(dispatch_get_main_queue(),^{[self.view releaseCapture];self.view.input=nil;});}
-- (void)spiceError:(CSConnection *)c code:(CSConnectionError)code message:(NSString *)message{fprintf(stderr,"SPICE error %s\n",message.UTF8String);dispatch_async(dispatch_get_main_queue(),^{self.window.subtitle=message;});}
-- (void)spiceDisplayCreated:(CSConnection *)c display:(CSDisplay *)d{dispatch_async(dispatch_get_main_queue(),^{self.display=d;[d addRenderer:self.renderer];[self fit];self.window.subtitle=self.view.seamless?@"⌘V pastes into guest • ⌃⌘F full screen • ⌃⌘R re-syncs pointer":@"Click to capture • ⌃⌥ releases";fprintf(stderr,"DISPLAY created %.0fx%.0f GL=%d\n",d.displaySize.width,d.displaySize.height,d.isGLEnabled);});}
+- (void)spiceError:(CSConnection *)c code:(CSConnectionError)code message:(NSString *)message{fprintf(stderr,"SPICE error %s\n",message.UTF8String);dispatch_async(dispatch_get_main_queue(),^{self.window.title=[@"Googlebook: " stringByAppendingString:message];});}
+- (void)spiceDisplayCreated:(CSConnection *)c display:(CSDisplay *)d{dispatch_async(dispatch_get_main_queue(),^{self.display=d;[d addRenderer:self.renderer];[self fit];self.window.title=@"Googlebook";[self updatePointerHint];fprintf(stderr,"DISPLAY created %.0fx%.0f GL=%d\n",d.displaySize.width,d.displaySize.height,d.isGLEnabled);});}
 - (void)spiceDisplayUpdated:(CSConnection *)c display:(CSDisplay *)d{dispatch_async(dispatch_get_main_queue(),^{[self fit];});}
 - (void)spiceDisplayDestroyed:(CSConnection *)c display:(CSDisplay *)d{dispatch_async(dispatch_get_main_queue(),^{[d removeRenderer:self.renderer];self.display=nil;});}
 - (void)spiceAgentConnected:(CSConnection *)c supportingFeatures:(CSConnectionAgentFeature)f{}

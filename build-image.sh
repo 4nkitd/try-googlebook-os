@@ -32,18 +32,18 @@ export GOOGLEBOOK_GUEST_DIR="$GUEST" GOOGLEBOOK_TOOLS_DIR="$TOOLS"
 cd "$WS"
 
 say "Kernel and ramdisks from the Googlebook image"
-python3 scripts/extract_mica_normal.py >"$WORK/build-image.log" 2>&1 || { tail -20 "$WORK/build-image.log"; die "extract failed"; }
-python3 scripts/make_mica_gpu_initrd.py >>"$WORK/build-image.log" 2>&1 || { tail -20 "$WORK/build-image.log"; die "ramdisk failed"; }
+py scripts/extract_mica_normal.py >"$WORK/build-image.log" 2>&1 || { tail -20 "$WORK/build-image.log"; die "extract failed"; }
+py scripts/make_mica_gpu_initrd.py >>"$WORK/build-image.log" 2>&1 || { tail -20 "$WORK/build-image.log"; die "ramdisk failed"; }
 
 say "Vendor overlay, policy and services"
-python3 scripts/make_mica_security_port.py base --graphics --audio --vm-compat --locksettings --offline-desktop \
+py scripts/make_mica_security_port.py base --graphics --audio --vm-compat --locksettings --offline-desktop \
   --quiet-diagnostics --runtime-diagnostics --crash-diagnostics --venus --vulkan-desktop --quiet-absent-hardware \
   --host-control --host-input --bluetooth ${GBOS_IMAGE_FLAGS:-} >>"$WORK/build-image.log" 2>&1 || { tail -30 "$WORK/build-image.log"; die "image assembly failed"; }
 
 say "User data area and extra kernel modules"
-{ python3 scripts/expand_mica_userdata.py artifacts/mica/base/googlebook.raw \
-  && python3 scripts/add_mica_system_heap.py base base-heap \
-  && python3 scripts/add_mica_virtio_blk.py base-heap base-heap-vblk; } >>"$WORK/build-image.log" 2>&1 \
+{ py scripts/expand_mica_userdata.py artifacts/mica/base/googlebook.raw \
+  && py scripts/add_mica_system_heap.py base base-heap \
+  && py scripts/add_mica_virtio_blk.py base-heap base-heap-vblk; } >>"$WORK/build-image.log" 2>&1 \
   || { tail -30 "$WORK/build-image.log"; die "image finishing failed"; }
 
 mkdir -p "$IMAGE_DIR"

@@ -19,7 +19,7 @@ Touch ID for sudo and 1Password: not applicable, Android has no PAM stack.
 
 | Feature | Us | To replicate | Effort |
 |---|---|---|---|
-| Paste into guest (text) | done (Cmd-V) | keep | - |
+| Paste into guest (text) | implemented for absolute pointer mode; end-to-end verification pending | fix captured-mode Cmd-V and test | S |
 | Copy guest to Mac (text) | partial (implemented, untested) | test and harden | S |
 | Images (PNG) both directions | missing | add image formats | M |
 | Nothing transferred until copied | partial | verify semantics | S |
@@ -84,10 +84,11 @@ Touch ID for sudo and 1Password: not applicable, Android has no PAM stack.
 | Locale inheritance | nice-to-have |
 | Memory reclamation | virtio balloon / free page reporting, needs investigation |
 | 60 fps display cap | QEMU refresh setting, upstream |
-| Trusty/TPM crash loop | upstream issue, log spam only |
+| Trusty/TPM crash loop | observed log churn; CPU impact not isolated |
 
 ## Applied fixes
 
 - 2026-10-17: guest-side mouse acceleration disabled (`mouse_pointer_acceleration_enabled=0`, `pointer_speed=0`) for the current user. Matches upstream issue #4 (double acceleration from macOS and guest stacking). Persists in userdata; can be toggled back in Googlebook OS settings.
 - 2026-10-17: mouse pass 2 shipped: event coalescing off; live pointer-speed slider (Settings, 0.25-3.0). Viewer rebuilt, VM re-verified on the new build.
-- 2026-10-17: USB passthrough shipped: `run_vm.py --usb`, `run/usb_launch.py` (list/start/stop, one admin prompt). Live test needs a plugged device; camera guidance in `usb-passthrough.md`.
+- 2026-10-17: USB/Bluetooth prototype code exists, but physical passthrough and privileged startup are unverified. Earlier "shipped" wording overstated readiness; see `usb-passthrough.md`.
+- 2026-10-17: compact header candidate uses native title-bar accessories. Layout fixture measured 52 to 32 pt; running VM has not been restarted to apply it.

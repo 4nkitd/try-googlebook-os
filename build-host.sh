@@ -5,7 +5,7 @@
 . "$(dirname "$0")/lib.sh"
 no_running_vm
 need git "Xcode command line tools"; need clang "Xcode command line tools"
-need python3 "Homebrew or Xcode"; need pkg-config "brew install pkg-config"
+need uv "brew install uv"; need pkg-config "brew install pkg-config"
 FW="$UTM_BETA_APP/Contents/Frameworks"
 [ -d "$FW/qemu-aarch64-softmmu.framework" ] || die "UTM 5 beta not found at $UTM_BETA_APP (set UTM_BETA_APP)"
 if [ ! -d "$MESA_SRC/include/KHR" ]; then
@@ -17,8 +17,8 @@ mkdir -p "$WORK/src" "$WORK/build" "$WORK/host" "$WORK/pkgconfig"
 
 say "Python build environment (meson, ninja)"
 if [ ! -x "$WORK/env/bin/meson" ]; then
-  python3 -m venv "$WORK/env"
-  "$WORK/env/bin/pip" -q install meson==1.12.1 ninja==1.13.2 mako pyyaml packaging
+  uv venv --python 3.12 "$WORK/env"
+  uv pip install --python "$WORK/env/bin/python" meson==1.12.1 ninja==1.13.2 mako pyyaml packaging
 fi
 export PATH="$WORK/env/bin:$PATH" CCACHE_DISABLE=1
 
@@ -74,7 +74,7 @@ say "Googlebook VM app"
 checkout "$COCOASPICE_REPO" "$COCOASPICE_COMMIT" "$WORK/src/CocoaSpice"
 apply_patch "$WORK/src/CocoaSpice" "$ROOT/patches/cocoaspice-viewer.patch"
 rm -rf "$WORK/host/Googlebook Viewer.app"
-python3 "$ROOT/host/build_viewer.py" "$WORK/src/CocoaSpice" "$FW" "$ROOT/host/viewer.m" "$WORK/host" "$ROOT/run" "$WORK" >/dev/null
+py "$ROOT/host/build_viewer.py" "$WORK/src/CocoaSpice" "$FW" "$ROOT/host/viewer.m" "$WORK/host" "$ROOT/run" "$WORK" >/dev/null
 
 say "Host build complete: $WORK/host"
 ls -l "$WORK/host"

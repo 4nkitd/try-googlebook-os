@@ -3,6 +3,7 @@
 
   run_vm.py WORK RUN_NAME [--seconds N] [--snapshot] [--offline] [--no-audio] [--no-bluetooth]
             [--display WxH] [--memory MIB] [--cpus N] [--usb VVVV:PPPP ...]
+            [--bluetooth-device VVVV:PPPP]
 
 WORK is the build folder (host/, image/, UTM-beta/). Logs and sockets go to WORK/logs/RUN_NAME.
 The disk is written to unless --snapshot is given. Networking is QEMU user-mode NAT with no
@@ -97,6 +98,34 @@ def start_netsimd(binary, out):
     return proc, port
 
 
+def start_bt_bridge(spec, out):
+    """Start the USB-to-HCI bridge; it listens on a free loopback port for QEMU's chardev."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    script = Path(__file__).resolve().parent / "bt_bridge.py"
+    python = os.environ.get("GBOS_BT_PYTHON") or sys.executable
+    proc = subprocess.Popen(
+        [python, str(script), spec, "--port", str(port)],
+        cwd=out,
+        env=dict(os.environ, GOOGLEBOOK_WORK=str(out.parent.parent)),
+        stdin=subprocess.DEVNULL,
+        stdout=(out / "bt-bridge.log").open("wb"),
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+    def stop():
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+    atexit.register(stop)
+    return proc, port
+
+
 def main():
     a = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -108,6 +137,11 @@ def main():
     a.add_argument("--offline", action="store_true")
     a.add_argument("--no-audio", action="store_true")
     a.add_argument("--no-bluetooth", action="store_true")
+    a.add_argument(
+        "--bluetooth-device",
+        metavar="VVVV:PPPP",
+        help="bridge a real USB Bluetooth dongle into the guest (needs administrator rights; see run/bt_bridge.py)",
+    )
     a.add_argument("--display", default="1920x1200")
     a.add_argument("--memory", type=int, default=4096)
     a.add_argument("--cpus", type=int, default=6)
@@ -121,6 +155,15 @@ def main():
     a.add_argument("--image", help="image folder (default WORK/image)")
     args = a.parse_args()
     running_as_root = os.geteuid() == 0
+    if running_as_root:
+        a.error(
+            "This alpha does not run QEMU as root. Start the normal app without sudo."
+        )
+    if args.usb or args.bluetooth_device:
+        a.error(
+            "Physical USB/Bluetooth capture is not enabled in this alpha; the prototype needs security and hardware validation."
+        )
+    os.umask(0o077)
     for spec in args.usb:
         parts = spec.split(":")
         if len(parts) != 2 or not all(
@@ -129,6 +172,15 @@ def main():
         ):
             sys.exit(
                 f"bad --usb spec {spec!r}; expected hex VENDOR:PRODUCT (for example 04d8:003f)"
+            )
+    if args.bluetooth_device:
+        parts = args.bluetooth_device.split(":")
+        if len(parts) != 2 or not all(
+            part and len(part) <= 4 and all(c in "0123456789abcdefABCDEF" for c in part)
+            for part in parts
+        ):
+            sys.exit(
+                f"bad --bluetooth-device spec {args.bluetooth_device!r}; expected hex VENDOR:PRODUCT"
             )
     work = Path(args.work).resolve()
     assert (
@@ -162,16 +214,21 @@ def main():
     (out / "token").write_text(token)
     os.chmod(out / "token", 0o644 if running_as_root else 0o600)
 
-    netsim, cmdline = None, CMDLINE + " androidboot.gbos_token=" + token
-    netsimd = None if args.no_bluetooth else find_netsimd()
-    if netsimd:
-        netsim, bt_port = start_netsimd(netsimd, out)
+    netsim, bt_proc, cmdline = None, None, CMDLINE + " androidboot.gbos_token=" + token
+    if args.bluetooth_device:
+        bt_proc, bt_port = start_bt_bridge(args.bluetooth_device, out)
         cmdline += " androidboot.product.vendor.sku=vmbt"
-    print(
-        "bluetooth:",
-        f"virtual controller ({netsimd})" if netsimd else "none",
-        flush=True,
-    )
+        print("bluetooth: USB bridge", args.bluetooth_device, flush=True)
+    else:
+        netsimd = None if args.no_bluetooth else find_netsimd()
+        if netsimd:
+            netsim, bt_port = start_netsimd(netsimd, out)
+            cmdline += " androidboot.product.vendor.sku=vmbt"
+        print(
+            "bluetooth:",
+            f"virtual controller ({netsimd})" if netsimd else "none",
+            flush=True,
+        )
 
     cmd = [
         str(host / "qemu-interop"),
@@ -239,7 +296,7 @@ def main():
             "-device",
             "usb-net,id=ethernet,netdev=googlebooknet,bus=xhci.0,mac=52:54:00:12:34:56",
         ]
-    if netsim:
+    if netsim or bt_proc:
         # /dev/hvc0 in the guest; the Bluetooth service there speaks HCI over it.
         cmd += [
             "-chardev",
@@ -292,7 +349,7 @@ def main():
         if running_as_root:
             # QEMU creates its control sockets under the process umask; the viewer and this
             # folder's tools run as the logged-in user, so widen just those files.
-            control = [out / n for n in ("spice.sock", "serial.sock", "qmp.sock")]
+            control = [out / n for n in ("spice.sock", "serial.sock")]
             for _ in range(100):
                 for s in control:
                     if s.exists():
@@ -332,6 +389,11 @@ def main():
                     netsim.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     os.killpg(netsim.pid, signal.SIGTERM)
+            if bt_proc and bt_proc.poll() is None:
+                try:
+                    bt_proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    os.killpg(bt_proc.pid, signal.SIGTERM)
         (out / "result.json").write_text(json.dumps({"exit_code": rc}))
         print("exit", rc, flush=True)
 

@@ -1,158 +1,127 @@
-# Try Googlebook OS (gbos-vm fork)
+# Try Googlebook OS
 
-Runs a real Googlebook OS image in a VM on an Apple Silicon Mac — GPU-accelerated, with Chrome working.
+<img src="assets/icon-1024.png" alt="Try Googlebook OS open-book app icon" width="128" height="128">
 
-![Googlebook OS running](docs/img/googlebook-desktop.png)
+An experimental Googlebook OS VM for Apple Silicon Macs, based on
+[skylartaylor/gbos-vm](https://github.com/skylartaylor/gbos-vm).
 
-> **This is the Try Googlebook OS community fork** of [gbos-vm](https://github.com/skylartaylor/gbos-vm). Same engine, plus mouse-feel fixes (guest acceleration off, no event coalescing, live pointer-speed slider) and USB device passthrough (`run_vm.py --usb`, `run/usb_launch.py`). See [docs/ROADMAP.md](docs/ROADMAP.md). Not affiliated with Google, Dell, or the upstream project; no Google or UTM binaries are redistributed.
+![Googlebook desktop](docs/img/googlebook-desktop.png)
 
-It's not an emulator image or a generic Android build. The install script downloads Google's own recovery image for the Dell Googlebook (ARM64, Android 17), swaps the hardware-specific bits for virtual ones, and boots it under QEMU with Vulkan passed through to Metal.
+The ARM64 desktop has booted on an M4 Pro with 24 GB RAM and macOS 27.0.1.
+This fork adds a compact native window header, a captured-pointer speed control,
+and a fix for control-socket paths in deeply nested folders.
 
-> This isn't affiliated with Google or Dell, and it's not a verified Googlebook. Read [System Structure](#system-structure) before you sign into anything.
+## Install with Homebrew
 
-## Quick start
-
-```bash
-git clone https://github.com/skylartaylor/gbos-vm.git
-cd gbos-vm
-./install.sh
+```sh
+brew tap 4nkitd/tap
+brew install --cask try-googlebook-os
+open -a "Try Googlebook OS"
 ```
 
-Then open the app it built:
+Or download the ARM64 DMG from [Releases](https://github.com/4nkitd/try-googlebook-os/releases),
+drag **Try Googlebook OS.app** to Applications and open it.
 
-```bash
+**The download is a compiled setup launcher, not a preinstalled OS image.** First launch
+offers to open setup in Terminal. Setup downloads the pinned Google recovery and UTM
+components from their original providers, builds the compatibility runtime locally,
+and opens the VM. Later launches open the prepared VM.
+
+Requirements:
+
+- Apple Silicon, macOS 26 or newer. Tested here on macOS 27.0.1, not Intel.
+- At least 16 GB RAM and 60 GB free disk during setup.
+- Homebrew, `uv` and Xcode command line tools. The cask installs `uv`.
+- Android SDK/NDK and a JDK. Setup checks for them and offers to install missing pieces;
+  Google SDK licences require your acceptance.
+- About 9 GB of downloads, plus any missing developer tools.
+
+The launcher is ad-hoc signed, **not notarized**. If Gatekeeper blocks it, review the
+download's provenance and use macOS System Settings → Privacy & Security to approve it.
+Do not disable Gatekeeper globally.
+
+VM files live at `~/.local/share/try-googlebook-os/work`. Removing the cask does not delete
+the VM or its data. `GOOGLEBOOK_WORK` can select a different work directory for source tools.
+No repartitioning or administrator-level QEMU execution is part of the release.
+
+## What works and what is unfinished
+
+Verified locally:
+
+- ARM64 guest boot using QEMU's Hypervisor.framework backend.
+- Desktop rendering through the patched VirGL/Venus/MoltenVK stack.
+- Guest status, density changes and shutdown over the control channel.
+- Compact header layout, measured at 32 points instead of 52 in the native fixture.
+- Compiled setup launcher and non-destructive setup checks.
+
+Still experimental or unavailable:
+
+- Mouse feel needs user acceptance. The speed slider affects captured mode only.
+- Clipboard support is text-only and incomplete. Captured-mode Cmd-V and copying out need work.
+- Audio, fullscreen transitions and long sessions have not passed a comprehensive acceptance suite.
+- **Physical USB, real Bluetooth and camera startup are disabled in this alpha.** Research
+  prototypes remain in the source, but they lack hardware validation and a safe capture design.
+- Upstream reports a 60 fps limit and possible WebGL flat-shading errors.
+- The absent-hardware Trusty service still crash-loops. CPU and storage reductions remain planned work.
+
+## Controls
+
+| Control | Action |
+| --- | --- |
+| Header pointer icon | Choose captured, Android cursor or Mac cursor mode |
+| Header gear / Command-comma | Settings |
+| Control-Command-F | Full screen |
+| Control-Option | Release a captured mouse |
+| Control-Command-M | Cycle pointer mode |
+| Control-Command-R | Restart a VM owned by the viewer |
+
+The normal viewer asks Android to shut down when closed. Save guest work first.
+
+## Build from source
+
+```sh
+git clone https://github.com/4nkitd/try-googlebook-os.git
+cd try-googlebook-os
+./install.sh
 open "work/host/Googlebook VM.app"
 ```
 
-Drag that into your Dock if you want it there. It boots the VM when you open it and shuts Android down properly when you quit.
+Stop the VM before rebuilding. `update-image.sh` refreshes the system image while preserving
+userdata and retaining a backup; back up important data yourself before experimenting.
+Nothing in setup automatically updates an existing disk.
 
-The first boot takes about 45 seconds on a M5 MacBook. If you land on a user picker, click **User** — there's no password.
-
-`install.sh` downloads about 9 GB and wants 60 GB free. On an M5 MacBook the build part takes around five minutes; the downloads take however long your connection takes.
-
-## What you need
-
-- An **Apple Silicon Mac**. Intel Macs won't work — this is an ARM guest running on the hypervisor, not emulation.
-- **16 GB of RAM**, realistically. The VM gets 4 GB and the builds want a few more.
-- **Xcode command line tools** and **[Homebrew](https://brew.sh)**.
-- The **Android SDK** with an NDK, a build-tools version, and a platform (API 34+). Android Studio's defaults are fine. We build with NDK `28.2.13676358`; if you don't have that one the script uses your newest (30 is reported to work), or set `ANDROID_NDK` to pick.
-- A **JDK**. If you have Android Studio, its bundled one gets picked up automatically.
-- Optionally, the **Android Emulator** package from the SDK. Bluetooth borrows its virtual radio (see [What doesn't work yet](#what-doesnt-work-yet)); without it the VM boots with no Bluetooth.
-
-`install.sh` checks all of this before it downloads anything, and offers to install what's missing — the Homebrew packages, a JDK, and the Android pieces through Google's `sdkmanager` (you don't need Android Studio). It never asks for `sudo`. Run `./prereqs.sh` on its own to see where you stand.
-
-We build and test on one machine (M5, 16 GB, macOS 27). A couple of people have reported it working on M4 Macs too — if you try it on something else, tell us how it went.
-
-## Using it
-
-| Shortcut | What it does |
-|---|---|
-| `⌃⌘F` | Full screen |
-| `⌃⌘M` | Cycle pointer modes |
-| `⌃⌥` | Release a captured mouse |
-| `⌃⌘R` | Restart the VM |
-| `⌘V` | Paste the Mac clipboard into the guest |
-| `⌘,` | Settings |
-
-Quitting (or closing the window) shuts Android down properly. Your data lives in `work/image/googlebook.raw` and sticks around between runs.
-
-**Settings** (`⌘,`) has the pointer mode, resolution, memory, CPU cores, and toggles for networking, audio and Bluetooth. Pointer mode changes right away; everything else is a VM option, so it applies the next time you start it.
-
-Resolution defaults to your display's native pixels at 16:10. On a notched MacBook that's exactly the area below the notch, so full screen is pixel-for-pixel.
-
-### Updating
-
-After a `git pull`, rebuild the app and refresh the system part of your disk. Quit the VM first.
-
-```bash
-./build-host.sh
-./update-image.sh
+```sh
+uv run -m unittest discover -s tests -p 'test_*.py' -v
+uv run --python 3.12 distribution/package.py
 ```
 
-`update-image.sh` keeps your data — it only replaces the system area, and it leaves the previous disk next to the new one as `googlebook.raw.before-update` in case something goes wrong.
+Packaging requires a clean committed tree and macOS. It produces an ARM64 setup-launcher
+DMG, a source archive and SHA-256 checksums under `dist/<version>/`.
 
-If you'd rather drive it from a terminal, `python3 run/launch.py work` does the same thing and takes `--display 1920x1200` and `--fullscreen`.
+The icon's vector source is `assets/AppIcon.svg`. Regenerate the PNG and macOS icon with
+`uv run --with pillow --with resvg-py assets/make_icon.py`.
 
-### Pointer modes
+## Security and redistribution
 
-**Captured mouse** is the default: click the window to grab the mouse, `⌃⌥` to let go. It's the classic VM experience — a plain USB mouse as far as Android is concerned, so it behaves.
+This is not a verified Googlebook. The modified vendor partition lacks stock verified-boot
+trust, and KeyMint/Gatekeeper use software instead of hardware-backed keys. Use a test
+account rather than sensitive personal or work credentials.
 
-There are two integrated modes where the pointer moves in and out of the window freely. They're labelled **experimental** because they're still kind of buggy:
+The current pointer/clipboard helper and optional simulated Bluetooth radio assume a trusted
+local Mac. Their loopback protocols are not a multi-user isolation boundary. The token can
+be visible to local processes. Do not use this alpha on a shared, untrusted Mac.
 
-- **Android cursor.** The guest draws the pointer, so it changes shape properly (I-beams, resize arrows). It trails your hand a little, and Android sees it as a stylus, which gets weird in places.
-- **Mac cursor.** Instant, but it's always an arrow.
+Googlebook OS is proprietary. Releases contain **no Google recovery-derived images, user
+disks, accounts, logs or UTM binaries**. They contain our small native setup executable,
+compatibility source, icon and documentation. Google and UTM downloads are checked against
+the pinned SHA-256 values in `lib.sh`.
 
-Switch in the **Pointer** menu, in Settings, or with `⌃⌘M`. Your choice is remembered, and clipboard sync works in all three.
+## Credits and licence
 
-## System Structure
+The VM engine and guest adaptation come from [gbos-vm](https://github.com/skylartaylor/gbos-vm).
+It builds on UTM, QEMU, Mesa, MoltenVK, CocoaSpice and Android Cuttlefish. Original copyright
+notices are retained. See [LICENSE](LICENSE); the CocoaSpice patch retains Apache-2.0 terms.
+This project is independent of Google, Dell, UTM and the upstream authors.
 
-The image starts as Google's unmodified recovery download. We don't touch the system partitions — but Googlebook OS expects hardware our VM doesn't have (a TPM, Trusty, a Qualcomm DSP, a specific GPU), so the **vendor partition gets rebuilt** with virtual-device replacements from Google's own Cuttlefish project:
-
-- **Software KeyMint and Gatekeeper** instead of hardware-backed ones. Your keys aren't protected by a secure element, because there isn't one.
-- **No verified boot on the vendor partition.** The other partitions keep their original verity; the one we modify can't.
-- **Three extra SELinux rules**, all narrowly about graphics buffer sharing. SELinux stays enforcing.
-- **Cuttlefish's Bluetooth service** instead of the Qualcomm one, talking to a virtual radio on your Mac over a virtual serial port. The radio listens on `127.0.0.1` with no password, so another program on your Mac could join it and show up as a nearby Bluetooth device. Turn Bluetooth off in Settings if that bothers you.
-- **A helper running as the Android shell user** that takes pointer and clipboard input from the viewer. It only accepts a host that presents a random per-boot token, and it listens to nothing — it connects out to `127.0.0.1` on your Mac.
-
-So: treat it like a dev VM. It's great for poking at the OS. I wouldn’t daily drive it or anything, but I’m sure some freaks (laudatory) will try.
-
-## What doesn't work yet
-
-- **Bluetooth is virtual only.** If you have the Android Emulator installed, the VM gets its simulated radio (`netsimd`): Bluetooth turns on, but there's nothing real to pair with. Actual devices would need a USB dongle bridged in, which we haven't built. Without the emulator, Android is told it has no Bluetooth at all.
-- **60 fps cap** on the guest display. The QEMU build we use doesn't expose a refresh rate setting.
-- **Flat shading can be wrong.** Chrome needs a Vulkan extension MoltenVK doesn't have, so we tell the guest it exists. That's fine for almost everything; `flat`-interpolated WebGL content may pick the wrong vertex.
-- **Copying *out* of the guest, right-click, and long sessions** are implemented but haven't had a proper test. They might be fine. They might not.
-- **Audio was silent on one boot** and then worked. We don't know why yet.
-
-## The Custom Bits
-
-Three things had to be built for this:
-
-**Buffer sharing between GLES and Vulkan.** Android hands the same graphics buffer to both APIs. On Linux that's a dma-buf; macOS has no such thing. We back each shared buffer with POSIX shared memory and import it into both Metal and MoltenVK — patch in `patches/virglrenderer-android-interop.patch`.
-
-**Row pitch.** Metal wants texture rows padded to 16 bytes; Android doesn't. The fix turned out to be small: that memory only ever lives on the Mac side, so the host can use whatever pitch Metal wants and the guest never needs to know.
-
-**A pointer that isn't a mouse.** Android wouldn't accept QEMU's absolute tablet, and steering a relative mouse to match your real cursor drifts. So a tiny helper inside the guest creates a virtual drawing tablet — which Android treats as an absolute pointer — and the viewer feeds it coordinates. This doesn’t work as well as we’d like, so capturing the cursor is most reliable still. We’re hoping to improve it.
-
-The rest is plumbing: `fetch.sh` gets the images, `build-host.sh` builds the patched renderer and viewer, `build-guest.sh` cross-compiles Mesa for Android, and `build-image.sh` assembles the disk.
-
-## Layout
-
-```
-install.sh          runs the four steps below in order
-fetch.sh            downloads + verifies the Googlebook image, Cuttlefish, and UTM
-build-host.sh       patched virglrenderer, QEMU launcher, viewer
-build-guest.sh      Mesa (GLES + Vulkan), pointer helper, SELinux policy tool
-build-image.sh      assembles the bootable disk
-update-image.sh     refreshes an existing disk after a git pull, keeping your data
-run/                VM runner and a command-line launcher (the app bundles these)
-image/              the scripts that rebuild the vendor partition
-guest/  host/       sources for the bits we wrote
-patches/            our changes to virglrenderer, Mesa and CocoaSpice
-```
-
-Everything lands in `work/` (set `GOOGLEBOOK_WORK` to put it elsewhere). If you already have the big downloads, point `GOOGLEBOOK_DOWNLOADS` at them and they won't be fetched again. Builds use four jobs by default — raise `GBOS_JOBS` if you have the RAM, but an uncapped Mesa build will happily push a 16 GB Mac into swap (ask me how I know).
-
-## What gets downloaded, and from where
-
-Nothing from Google or UTM is redistributed here. The script fetches each of these on your machine and checks it against a pinned SHA-256:
-
-- Googlebook recovery image — `dl.google.com` (build `16471258`)
-- Cuttlefish virtual device image — `ci.android.com` (build `16373615`)
-- UTM 5.0.6 beta — the official GitHub release (for its QEMU, MoltenVK and ANGLE)
-- Mesa 26.2.4, libsepol 3.11, bison 3.8.2 — their upstream release tarballs
-
-## Credits
-
-This leans entirely on other people's work: [UTM](https://github.com/utmapp/UTM) and its forks of virglrenderer and CocoaSpice, [Mesa](https://mesa3d.org), [MoltenVK](https://github.com/KhronosGroup/MoltenVK), QEMU, and the Android Cuttlefish team, whose virtual-device components are what make the image boot at all. The pointer helper uses the same trick as [scrcpy](https://github.com/Genymobile/scrcpy).
-
-## License
-
-MIT for everything we wrote — see [LICENSE](LICENSE). The patches apply to MIT-licensed projects, except `patches/cocoaspice-viewer.patch`, which modifies Apache-2.0 code and stays under that license.
-
-## AI Usage
-
-The following AI tools were used to assist in this project:
-- OpenAI GPT 6 Astra
-- DeepSeek 4.1 Flash
-- Anthropic Claude Opus 5.5
+[Roadmap](docs/ROADMAP.md) · [Performance measurements](docs/PERFORMANCE.md) ·
+[Feature parity](docs/parity-with-try-omarchy.md) · [USB/Bluetooth research status](docs/usb-passthrough.md)

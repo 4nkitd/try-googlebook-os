@@ -7,6 +7,7 @@
   usb_launch.py --stop          ask the VM from this folder to shut down
   usb_launch.py --status        show whether a VM from this folder is running
   usb_launch.py --print ...     print the commands instead of running them
+  usb_launch.py --bt VVVV:PPPP  start with a real USB Bluetooth dongle bridged in (run/bt_bridge.py)
 
 The VM runs with administrator rights because macOS only lets a process take a device its
 drivers have claimed (webcams, drives, audio gear) when that process is root or carries a
@@ -22,7 +23,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-WORK = Path(os.environ.get("GOOGLEBOOK_WORK", ROOT / "work"))
+WORK = Path(os.environ.get("GOOGLEBOOK_WORK", ROOT / "work")).expanduser().resolve()
 sys.path.insert(0, str(HERE))
 import vm_control  # noqa: E402
 
@@ -125,6 +126,11 @@ def main():
     ap.add_argument("--memory", type=int, help="guest memory in MiB")
     ap.add_argument("--cpus", type=int, help="guest processor cores")
     ap.add_argument(
+        "--bt",
+        metavar="VVVV:PPPP",
+        help="bridge a real USB Bluetooth dongle into the guest (run/bt_bridge.py)",
+    )
+    ap.add_argument(
         "--print",
         dest="dry_run",
         action="store_true",
@@ -167,7 +173,7 @@ def main():
         return
 
     found = list_devices()
-    if not args.devices:
+    if not args.devices and not args.bt:
         if not found:
             print("no USB devices attached")
         for label, vid, pid in found:
@@ -183,6 +189,16 @@ def main():
                 f"bad device spec {spec!r}; expected hex VENDOR:PRODUCT like 05ac:8514 "
                 "(run without arguments to list)"
             )
+    if args.bt and not valid_spec(args.bt):
+        sys.exit(
+            f"bad --bt spec {args.bt!r}; expected hex VENDOR:PRODUCT like 0a12:0001"
+        )
+    if args.bt and any(
+        tuple(int(p, 16) for p in device.split(":"))
+        == tuple(int(p, 16) for p in args.bt.split(":"))
+        for device in args.devices
+    ):
+        ap.error("a Bluetooth dongle cannot also be attached with --usb")
 
     display = args.display or default_setting("Resolution", "native")
     if "x" not in display:
@@ -191,10 +207,11 @@ def main():
     cpus = args.cpus if args.cpus is not None else int_setting("CPUs", 6)
     name = time.strftime("usb-%Y%m%d-%H%M%S")
     logs = WORK / "logs"
-    logs.mkdir(exist_ok=True)
     log = logs / f"{name}.launch.log"
     script = logs / f"{name}.launch.sh"
     usb_args = " ".join(f"--usb {shlex.quote(d)}" for d in args.devices)
+    if args.bt:
+        usb_args += f" --bluetooth-device {shlex.quote(args.bt)}"
     script_text = (
         "#!/bin/sh\n"
         f"cd {shlex.quote(str(ROOT))} && umask 022 && "
@@ -214,11 +231,16 @@ def main():
         print(["osascript", "-e", applescript])
         return
 
+    sys.exit(
+        "Physical USB/Bluetooth startup is disabled in this alpha. --print is a research preview only; no administrator prompt or capture was started."
+    )
+
     if not VIEWER.is_file():
         sys.exit(f"viewer binary missing at {VIEWER}; run host/build_viewer.py first")
     if vm_alive():
         sys.exit("a VM is already running; stop it first with: usb_launch.py --stop")
 
+    logs.mkdir(exist_ok=True)
     script.write_text(script_text)
     script.chmod(0o700)
     if subprocess.run(["osascript", "-e", applescript]).returncode != 0:

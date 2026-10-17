@@ -40,7 +40,7 @@ def send(run_dir, verb, text=None):
     data = (line + "\n").encode()
     run = Path(run_dir).resolve()
     full = run / "serial.sock"
-    if len(str(full)) <= 100:
+    if len(os.fsencode(full)) <= 100:
         _send(str(full), data)
         return
     cwd = os.getcwd()

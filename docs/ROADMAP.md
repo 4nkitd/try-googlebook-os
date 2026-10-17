@@ -8,13 +8,13 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 - [x] Googlebook OS (ARM64) running locally, GPU-accelerated, boot to desktop verified.
 - [x] Guest mouse acceleration disabled (fixes the double-acceleration stacking, upstream issue #4).
 - [x] Mouse feel pass 2: mouse-event coalescing off; immediate pointer-speed slider in Settings.
-- [x] USB passthrough plumbing: `run_vm.py --usb`, `run/usb_launch.py` with the admin flow.
+- [ ] Validate USB passthrough end to end. CLI plumbing exists; privileged launch and physical devices are unverified.
 
 ## Performance (active focus)
 
-- [x] Baseline and first A/B (see `docs/PERFORMANCE.md`): boot about 40 s guest; idle QEMU
-      22-37% of one core (bursty, guest-side); HVF overhead negligible; GICv3 usable under HVF
-      on UTM's QEMU. vCPU 6 vs 8 shows no clear difference; default stays 6.
+- [x] Baseline and first A/B (see `docs/PERFORMANCE.md`): boot about 40 s guest; sampled QEMU
+      CPU about 22-37% of one core. The samples do not separate host and guest overhead.
+      vCPU 6 vs 8 shows no clear difference; default stays 6.
 - [ ] Stop the Trusty crash loop (vendor init service) through the image overlay.
 - [ ] Free-page reporting / virtio-balloon experiment for host memory.
 - [ ] 60 fps cap investigation.
@@ -22,6 +22,10 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 
 ## M1: input polish (in progress)
 
+- [x] Compact title-bar candidate with Pointer, Full Screen, Settings and Restart. Native layout
+      test measured 32 pt versus the former 52 pt. Candidate compiled and screenshot checked.
+- [x] Apply compact candidate after approved reboot. Guest control confirmed boot completion in 41.2 seconds wall time.
+- [ ] Verify fullscreen transitions and header interactions on the live guest.
 - [ ] Live test of the pointer-speed slider; tune default if needed.
 - [ ] Raw-HID mouse mode to bypass macOS pointer acceleration entirely (needs Input Monitoring
       permission). Only if the slider is not enough.
@@ -32,11 +36,15 @@ Source list: `docs/parity-with-try-omarchy.md`. Updated 2026-10-17.
 
 ## M2: USB and camera (in progress)
 
-- [x] QEMU `usb-host` flag, privileged start, list/stop/status helper.
-- [ ] Plug-and-test with a real device (webcam or USB drive).
+- [x] QEMU `usb-host` command generation and list/stop/status helper code.
+- [ ] Privileged USB startup and device identity/permission safety review.
+- [ ] Plug-and-test with a real device (webcam or USB drive). No physical-device test has passed yet.
+- [ ] Bluetooth bridge prototype: framing self-test, environment discovery and `--bt` forwarding pass;
+      device capture, pairing and audio remain unverified. Not release-ready.
 - [ ] Viewer Settings UI: device picker, "restart with USB…" flow, no terminal needed.
-- [ ] Camera: USB webcam through the passthrough flow. Built-in camera cannot be passed;
-      a virtual camera bridge stays R&D (see `docs/usb-passthrough.md`).
+- [ ] Camera: validate USB capture, the guest UVC driver and Android's external camera provider.
+- [ ] Built-in camera sharing requires a separate macOS capture and Android camera bridge;
+      it cannot use the USB dongle path. Research remains in scope.
 
 ## M3: clipboard
 
