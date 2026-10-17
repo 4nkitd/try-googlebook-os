@@ -54,14 +54,14 @@ def list_devices():
     return found
 
 
-def newest_run_dir():
+def newest_run_dir(live_only=True):
     logs = WORK / "logs"
-    dirs = (
-        [d for d in logs.glob("*") if (d / "serial.sock").exists()]
-        if logs.exists()
-        else []
-    )
-    return max(dirs, key=lambda d: d.stat().st_mtime) if dirs else None
+    if not logs.exists():
+        return None
+    picks = [d for d in logs.glob("*") if (d / "serial.sock").exists()]
+    if not picks and not live_only:
+        picks = [d for d in logs.glob("*") if (d / "serial.log").exists()]
+    return max(picks, key=lambda d: d.stat().st_mtime) if picks else None
 
 
 def vm_alive():
@@ -120,8 +120,9 @@ def main():
     args = ap.parse_args()
 
     if args.status:
-        d = newest_run_dir()
-        print("vm running:", "yes" if vm_alive() else "no")
+        alive = vm_alive()
+        d = newest_run_dir(live_only=alive)
+        print("vm running:", "yes" if alive else "no")
         print("newest run folder:", d if d else "none")
         return
 
@@ -132,7 +133,6 @@ def main():
             return
         vm_control.send(d, "VM_POWEROFF")
         print("asked Android to power off, waiting for the VM to exit")
-        for _ in range(40):
             if not vm_alive():
                 print("VM stopped")
                 return
